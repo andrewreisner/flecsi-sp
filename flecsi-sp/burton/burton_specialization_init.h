@@ -21,6 +21,7 @@
 #include <flecsi-sp/io/exodus_definition.h>
 #include <flecsi-sp/utils/char_array.h>
 #include <flecsi-sp/utils/types.h>
+#include <flecsi-sp/io/mpas_definition.h>
 
 #ifndef FLECSI_SP_ENABLE_EXODUS
 #  error Exodus is needed to build burton specialization.
@@ -1559,6 +1560,7 @@ auto make_sides( const MESH_DEFINITION & mesh_def )
 ////////////////////////////////////////////////////////////////////////////////
 /// \brief the main cell coloring driver
 ////////////////////////////////////////////////////////////////////////////////
+template<typename io_def_t>
 void partition_mesh( utils::char_array_t filename, std::size_t max_entries )
 {
   // set some compile time constants
@@ -1582,7 +1584,7 @@ void partition_mesh( utils::char_array_t filename, std::size_t max_entries )
 
   // load the mesh
   auto filename_string = filename.str();
-  exodus_definition_t mesh_def( filename_string );
+  io_def_t mesh_def( filename_string );
 
   // Create a communicator instance to get neighbor information.
   auto communicator = std::make_unique<flecsi::coloring::mpi_communicator_t>();
@@ -2472,6 +2474,7 @@ void partition_mesh( utils::char_array_t filename, std::size_t max_entries )
 ////////////////////////////////////////////////////////////////////////////////
 /// \brief the main mesh initialization driver
 ////////////////////////////////////////////////////////////////////////////////
+template<typename io_def_t>
 void initialize_mesh(
   utils::client_handle_w<burton_mesh_t> mesh,
   utils::char_array_t filename
@@ -2486,7 +2489,6 @@ void initialize_mesh(
 
   // alias some types
   using real_t = burton_mesh_t::real_t;
-  using exodus_definition_t = flecsi_sp::io::exodus_definition<num_dims, real_t>;
 
   // get the context
   const auto & context = flecsi::execution::context_t::instance();
@@ -2494,7 +2496,7 @@ void initialize_mesh(
 
   // Load the mesh
   auto filename_string = filename.str();
-  exodus_definition_t mesh_def( filename_string );
+  io_def_t mesh_def( filename_string );
 
   // fill the mesh
   create_cells( mesh_def, mesh );
@@ -2526,18 +2528,39 @@ void initialize_mesh(
 
 } // initialize_mesh
 
+
+// Some aliases for mesh partitioning/initialization functions
+using exo_def_t =
+    io::exodus_definition__<flecsi_sp::burton::burton_mesh_t::num_dimensions,
+                            flecsi_sp::burton::burton_mesh_t::real_t>;
+using mpas_def_t =
+    io::mpas_definition_u<flecsi_sp::burton::burton_mesh_t::real_t>;
+
+auto &partition_mpas_mesh = partition_mesh<mpas_def_t>;
+auto &partition_exo_mesh = partition_mesh<exo_def_t>;
+auto &initialize_mpas_mesh = initialize_mesh<mpas_def_t>;
+auto &initialize_exo_mesh = initialize_mesh<exo_def_t>;
+
+
 ///////////////////////////////////////////////////////////////////////////////
 // Task Registration
 ///////////////////////////////////////////////////////////////////////////////
-flecsi_register_mpi_task(partition_mesh, flecsi_sp::burton);
-flecsi_register_task(initialize_mesh, flecsi_sp::burton, loc,
-    index|flecsi::leaf);
+
+flecsi_register_mpi_task(partition_mpas_mesh, flecsi_sp::burton);
+flecsi_register_mpi_task(partition_exo_mesh, flecsi_sp::burton);
+flecsi_register_task(initialize_mpas_mesh, flecsi_sp::burton, loc,
+                     index | flecsi::leaf);
+flecsi_register_task(initialize_exo_mesh, flecsi_sp::burton, loc,
+                     index | flecsi::leaf);
+
 
 ///////////////////////////////////////////////////////////////////////////////
 // Clent Registration happens here because the specialization initialization
 // needs to know which mesh to access
 ///////////////////////////////////////////////////////////////////////////////
 flecsi_register_data_client(burton_mesh_t, meshes, mesh0);
+
+
 
 
 #ifdef BURTON_ENABLE_APPLICATION_TLT_INIT

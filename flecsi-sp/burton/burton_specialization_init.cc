@@ -67,10 +67,20 @@ void specialization_tlt_init(int argc, char** argv)
 
   // need to put the filename into a statically sized character array
   auto mesh_filename = flecsi_sp::utils::to_char_array( mesh_filename_string );
+  auto extension = ristra::utils::file_extension(mesh_filename_string);
 
   // execute the mpi task to partition the mesh
-  flecsi_execute_mpi_task(partition_mesh, flecsi_sp::burton, mesh_filename,
-    max_entries);
+  if(extension == "exo" || extension == "g") {
+    flecsi_execute_mpi_task(partition_exo_mesh, flecsi_sp::burton,
+                            mesh_filename, max_entries);
+  }
+  else if(extension == "h5") {
+    flecsi_execute_mpi_task(partition_mpas_mesh, flecsi_sp::burton,
+                            mesh_filename, max_entries);
+  }
+  else {
+    throw_runtime_error("unrecognized file extension: " << extension);
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -101,8 +111,20 @@ void specialization_spmd_init(int argc, char** argv)
   // get a mesh handle and call the initialization task
   auto mesh_handle = flecsi_get_client_handle(
       flecsi_sp::burton::burton_mesh_t, meshes, mesh0);
-  flecsi_execute_task(initialize_mesh, flecsi_sp::burton, index,
-      mesh_handle, mesh_filename);
+  auto extension = ristra::utils::file_extension(mesh_filename_string);
+
+  // execute the mpi task to partition the mesh
+  if(extension == "exo" || extension == "g") {
+    flecsi_execute_task(initialize_exo_mesh, flecsi_sp::burton, index,
+                        mesh_handle, mesh_filename);
+  }
+  else if(extension == "h5") {
+    flecsi_execute_task(initialize_mpas_mesh, flecsi_sp::burton, index,
+                        mesh_handle, mesh_filename);
+  }
+  else {
+    throw_runtime_error("unrecognized file extension: " << extension);
+  }
 }
 
 } // namespace

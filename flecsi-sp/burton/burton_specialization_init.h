@@ -2531,10 +2531,10 @@ void initialize_mesh(
 
 // Some aliases for mesh partitioning/initialization functions
 using exo_def_t =
-    io::exodus_definition__<flecsi_sp::burton::burton_mesh_t::num_dimensions,
+    io::exodus_definition<flecsi_sp::burton::burton_mesh_t::num_dimensions,
                             flecsi_sp::burton::burton_mesh_t::real_t>;
 using mpas_def_t =
-    io::mpas_definition_u<flecsi_sp::burton::burton_mesh_t::real_t>;
+    io::mpas_definition<flecsi_sp::burton::burton_mesh_t::real_t>;
 
 auto &partition_mpas_mesh = partition_mesh<mpas_def_t>;
 auto &partition_exo_mesh = partition_mesh<exo_def_t>;

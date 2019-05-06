@@ -12,7 +12,7 @@
 
 // the MPAS mesh files hold native doubles
 using mpas_def_t =
-  flecsi_sp::io::mpas_definition_u<double>;
+  flecsi_sp::io::mpas_definition<double>;
 
 // The flecsi library has undefined symbols in it.  It calls
 // flecsi::execution::driver even though we are not using the execution model.

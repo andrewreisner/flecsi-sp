@@ -333,8 +333,7 @@ void read_connectivity(const std::string &file_name,
   clog_assert(h5::get_rank(dset) == 2,
               "Expected two dimensions for coordinate data");
 
-  // Get the dimension size of each dimension in the dataspace and
-  // display them.
+  // Get the dimension size of each dimension in the dataspace
   hsize_t dims[2];
   h5::get_simple_dims(dset, dims);
 
@@ -348,8 +347,7 @@ void read_connectivity(const std::string &file_name,
 
   H5Dread(dset, H5T_NATIVE_LONG, H5S_ALL, H5S_ALL, H5P_DEFAULT, conn);
 
-  // Adding connectivity information from the HDF5 array to FleCSI
-  // connectivity
+  // Adding connectivity information from the HDF5 array to FleCSI connectivity
   for (size_t i = 0; i < dim1_size; i++) {
     std::vector<size_t> tmp;
     for (size_t j = 0; j < dim2_size; j++) {
@@ -380,12 +378,13 @@ void dump_connectivity(std::vector<std::vector<size_t>> &connectivity) {
 
 }  // namespace detail
 
-////////////////////////////////////////////////////////////////////////////////
-/// \brief This is the three-dimensional mesh reader and writer based on the
-///        MPAS HDF5 file format.
-////////////////////////////////////////////////////////////////////////////////
+
+
 template <typename T>
-class mpas_base_u {
+class mpas_base {
+  // TODO: Do we need this base class?  There's only one mesh type that we care
+  // about.
+
  public:
   //============================================================================
   // Typedefs
@@ -416,23 +415,21 @@ class mpas_base_u {
 
   //! the number of dimensions
   static constexpr size_t num_dims = 2;
-
-  enum class block_t { tri, quad, polygon, tet, hex, polyhedron, unknown };
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-/// \brief This is the three-dimensional mesh reader and writer based on the
+/// \brief This is the two-dimensional mesh reader and writer based on the
 ///        MPAS HDF5 file format.
 ////////////////////////////////////////////////////////////////////////////////
 template <typename T>
-class mpas_definition_u : public flecsi::topology::mesh_definition_u<2> {
+class mpas_definition : public flecsi::topology::mesh_definition_u<2> {
  public:
   //============================================================================
   // Typedefs
   //============================================================================
 
   //! the instantiated base type
-  using base_t = mpas_base_u<T>;
+  using base_t = mpas_base<T>;
 
   //! the instantiated mesh definition type
   using mesh_definition_t = flecsi::topology::mesh_definition_u<2>;
@@ -454,25 +451,30 @@ class mpas_definition_u : public flecsi::topology::mesh_definition_u<2> {
 
   using point_t = mesh_definition_t::point_t;
 
+
   //============================================================================
   // Constructors
   //============================================================================
 
-  //! \brief Default constructor
-  mpas_definition_u() = default;
 
   //! \brief Constructor with filename
   //! \param [in] filename  The name of the file to load
-  mpas_definition_u(const std::string &filename) { read(filename); }
+  //
+  // An mpas_definition should not be valid if there is no backing file, so we
+  // require it to build the object.
+  mpas_definition(const std::string &filename) { read(filename); }
+
+  /// Default constructor (disabled)
+  mpas_definition() = delete;
 
   /// Copy constructor (disabled)
-  mpas_definition_u(const mpas_definition_u &) = delete;
+  mpas_definition(const mpas_definition &) = delete;
 
   /// Assignment operator (disabled)
-  mpas_definition_u &operator=(const mpas_definition_u &) = delete;
+  mpas_definition & operator=(const mpas_definition &) = delete;
 
   /// Destructor
-  ~mpas_definition_u() = default;
+  ~mpas_definition() = default;
 
   //============================================================================
   //! \brief Implementation of mpas mesh read for burton specialization.
@@ -480,8 +482,8 @@ class mpas_definition_u : public flecsi::topology::mesh_definition_u<2> {
   //! \param[in] name Read burton mesh \e m from \e name.
   //! \param[out] m Populate burton mesh \e m with contents of \e name.
   //============================================================================
-  void read(const std::string &name) {
-    clog(info) << "Reading mesh from: " << name << std::endl;
+  void read(const std::string &filename) {
+    clog(info) << "Reading mesh from: " << filename << std::endl;
 
     //--------------------------------------------------------------------------
     // read coordinates
@@ -489,52 +491,43 @@ class mpas_definition_u : public flecsi::topology::mesh_definition_u<2> {
     {  // cells
       const std::string x_dataset_name("xCell");
       const std::string y_dataset_name("yCell");
-      num_cells_ = detail::read_coordinates(name, x_dataset_name,
+      num_cells_ = detail::read_coordinates(filename, x_dataset_name,
                                             y_dataset_name, cells_);
     }  // scope
 
     {  // vertices
       const std::string x_dataset_name("xVertex");
       const std::string y_dataset_name("yVertex");
-      num_vertices_ = detail::read_coordinates(name, x_dataset_name,
+      num_vertices_ = detail::read_coordinates(filename, x_dataset_name,
                                                y_dataset_name, vertices_);
     }  // scope
 
-    /*
-      std::cout<<"num_cells = "<<num_cells_<< " , num_vert = "<<
-      num_vertices_<<std::endl;
-
-      for (size_t i = 0; i< 2*num_cells_; i++)
-      std::cout<< "cells_["<<i<<"] = %g"<<cells_[i]<<std::endl;
-
-      for (size_t i = 0; i< 2*num_vertices_; i++)
-      std::cout<< "vertices_["<<i<<"] = "<<vertices_[i]<<std::endl;
-    */
 
     // read connectivity information
-    const std::string vertOnCell_NAME("verticesOnCell");
-    detail::read_connectivity(name, vertOnCell_NAME, entities_[2][0]);
-
-    const std::string edgesOnCell_NAME("edgesOnCell");
-    detail::read_connectivity(name, edgesOnCell_NAME, entities_[2][1]);
-
-    const std::string vertOnEdge_NAME("verticesOnEdge");
-    detail::read_connectivity(name, vertOnEdge_NAME, entities_[1][0]);
+    const std::string edgesOnVertex_NAME("edgesOnVertex");
+    detail::read_connectivity(filename, "edgesOnVertex", entities_[0][1]);
 
     const std::string cellsOnVertex_NAME("cellsOnVertex");
-    detail::read_connectivity(name, cellsOnVertex_NAME, entities_[0][2]);
+    detail::read_connectivity(filename, cellsOnVertex_NAME, entities_[0][2]);
 
-    const std::string cellsOnEdge_NAME("cellsOnEdge");
-    detail::read_connectivity(name, cellsOnEdge_NAME, entities_[1][2]);
+    const std::string vertOnCell_NAME("verticesOnCell");
+    detail::read_connectivity(filename, vertOnCell_NAME, entities_[2][0]);
 
-    const std::string edgesOnVertex_NAME("edgesOnVertex");
-    detail::read_connectivity(name, edgesOnVertex_NAME, entities_[0][1]);
+    const std::string edgesOnCell_NAME("edgesOnCell");
+    detail::read_connectivity(filename, edgesOnCell_NAME, entities_[2][1]);
 
     const std::string cellsOnCell_NAME("cellsOnCell");
-    detail::read_connectivity(name, cellsOnCell_NAME, entities_[2][2]);
+    detail::read_connectivity(filename, cellsOnCell_NAME, entities_[2][2]);
+
+    const std::string vertOnEdge_NAME("verticesOnEdge");
+    detail::read_connectivity(filename, vertOnEdge_NAME, entities_[1][0]);
 
     const std::string edgesOnEdge_NAME("edgesOnEdge");
-    detail::read_connectivity(name, edgesOnEdge_NAME, entities_[1][1]);
+    detail::read_connectivity(filename, edgesOnEdge_NAME, entities_[1][1]);
+
+    const std::string cellsOnEdge_NAME("cellsOnEdge");
+    detail::read_connectivity(filename, cellsOnEdge_NAME, entities_[1][2]);
+
   }
 
   //============================================================================
@@ -552,8 +545,6 @@ class mpas_definition_u : public flecsi::topology::mesh_definition_u<2> {
           &node_sets = {}) const {
     clog(info) << "Writing mesh to: " << name << std::endl;
 
-    //--------------------------------------------------------------------------
-    // Open file
   }
 
   //============================================================================
@@ -579,9 +570,9 @@ class mpas_definition_u : public flecsi::topology::mesh_definition_u<2> {
   /// Return the set of vertices of a particular entity.
   /// \param [in] dimension  The entity dimension to query.
   /// \param [in] entity_id  The id of the entity in question.
-  const auto &entities(size_t from_dim, size_t to_dim) const {
+  const std::vector<std::vector<size_t>> & entities(size_t from_dim, size_t to_dim) const override{
     return entities_.at(from_dim).at(to_dim);
-  }  // vertices
+  }  // entities
 
   /// return the set of vertices of a particular entity.
   /// \param [in] dimension  the entity dimension to query.
@@ -589,7 +580,7 @@ class mpas_definition_u : public flecsi::topology::mesh_definition_u<2> {
   std::vector<size_t> entities(size_t from_dim, size_t to_dim,
                                size_t from_id) const override {
     return entities_.at(from_dim).at(to_dim).at(from_id);
-  }  // vertices
+  }  // entities
 
   /// Return the vertex coordinates for a certain id.
   /// \param [in] vertex_id  The id of the vertex to query.

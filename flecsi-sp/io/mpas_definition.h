@@ -598,6 +598,11 @@ class mpas_definition : public flecsi::topology::mesh_definition_u<2> {
   // Private data
   //============================================================================
 
+  //! \brief handle on the HDF5 file
+  //
+  // This is owned/managed solely by the mpas_definition object
+  hid_t file_handle;
+
   size_t num_vertices_ = 0;
   size_t num_cells_ = 0;
   //  size_t num_edges_ = 0;

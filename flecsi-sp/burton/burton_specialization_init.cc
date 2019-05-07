@@ -113,7 +113,7 @@ void specialization_spmd_init(int argc, char** argv)
       flecsi_sp::burton::burton_mesh_t, meshes, mesh0);
   auto extension = ristra::utils::file_extension(mesh_filename_string);
 
-  // execute the mpi task to partition the mesh
+  // execute the mpi task to initialize the mesh
   if(extension == "exo" || extension == "g") {
     flecsi_execute_task(initialize_exo_mesh, flecsi_sp::burton, index,
                         mesh_handle, mesh_filename);

@@ -1572,7 +1572,6 @@ void partition_mesh( utils::char_array_t filename, std::size_t max_entries )
   // make some type aliases
   using real_t = burton_mesh_t::real_t;
   using size_t = burton_mesh_t::size_t;
-  using exodus_definition_t = flecsi_sp::io::exodus_definition<num_dims, real_t>;
   using entity_info_t = flecsi::coloring::entity_info_t;
   using vertex_t = burton_mesh_t::vertex_t;
   using edge_t = burton_mesh_t::edge_t;

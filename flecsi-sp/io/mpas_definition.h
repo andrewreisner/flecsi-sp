@@ -72,7 +72,9 @@ struct type_equiv {};
 #define make_type_equiv(cxx_t, h5_t)                                           \
   template<>                                                                   \
   struct type_equiv<cxx_t> {                                                   \
-    static const hid_t h5_type = h5_t;                                         \
+    static hid_t h5_type() {                                                          \
+      return h5_t;                                                             \
+    }                                                                          \
   }
 
 /* HDF5 native datatypes are aliases for width-specific types set depending on
@@ -188,6 +190,8 @@ handle_conversion_err(H5T_conv_except_t except_type,
  *
  * \return a handle to the open file
  */
+
+
 hid_t
 open_file(const std::string & name, unsigned flags, hid_t fapl_id) {
   // Note: Third param (fapl_id) is the id for file access props For parallel
@@ -414,7 +418,7 @@ read_dataset_1D(hid_t file,
   }
 
   hid_t dset = open_dataset(file, dset_name);
-  constexpr hid_t dtype = type_equiv<T>::h5_type;
+  hid_t dtype = type_equiv<T>::h5_type();
 
   /* Check that the type we're trying to read shares the same typeclass as
    * what's actually in the dataset. */
@@ -425,9 +429,8 @@ read_dataset_1D(hid_t file,
   get_simple_dims(dset, &dset_size);
 
   T buf[dset_size];
-
   herr_t status = H5Dread(dset, dtype, H5S_ALL, H5S_ALL, transfer_plist, buf);
-  clog_assert(status >= 0, "Failed to read dataset " << dset_name);
+  clog_assert(status >= 0, "Failed to read dataset \"" << dset_name << "\"");
 
   data.insert(data.end(), buf, &buf[dset_size]);
 

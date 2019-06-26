@@ -17,7 +17,6 @@
 extern "C" {
 #include <hdf5.h>
 }
-//#include "H5Cpp.h"
 
 // system includes
 #include <algorithm>
@@ -72,7 +71,7 @@ struct type_equiv {};
 #define make_type_equiv(cxx_t, h5_t)                                           \
   template<>                                                                   \
   struct type_equiv<cxx_t> {                                                   \
-    static hid_t h5_type() {                                                          \
+    static hid_t h5_type() {                                                   \
       return h5_t;                                                             \
     }                                                                          \
   }
@@ -190,7 +189,6 @@ handle_conversion_err(H5T_conv_except_t except_type,
  *
  * \return a handle to the open file
  */
-
 
 hid_t
 open_file(const std::string & name, unsigned flags, hid_t fapl_id) {
@@ -403,11 +401,16 @@ create_plist(hid_t plist_type) {
 /* !
  * \brief read data from a dataset in a given *open* file
  *
+ * \param[in] file_handle to open HDF5 file
  *
- */
+ * \param[in] name name of the dataset to read from
+ *
+ * \param[out] data vector to add coordinates to
+ *
+ * \return number of entities read  */
 template<typename T>
 size_t
-read_dataset_1D(hid_t file,
+read_dataset_1D(hid_t file_handle,
   const std::string & dset_name,
   std::vector<T> & data) {
 
@@ -417,13 +420,17 @@ read_dataset_1D(hid_t file,
     clog_fatal("Failed to register type conversion error callback");
   }
 
-  hid_t dset = open_dataset(file, dset_name);
+  hid_t dset = open_dataset(file_handle, dset_name);
   hid_t dtype = type_equiv<T>::h5_type();
 
   /* Check that the type we're trying to read shares the same typeclass as
    * what's actually in the dataset. */
   H5T_class_t typeclass = H5Tget_class(dtype);
   assert_dataset_typeclass(dset, typeclass);
+
+  // Expecting two-dimensional data
+  clog_assert(
+    get_rank(dset) == 1, "Expected two dimensions for coordinate data");
 
   hsize_t dset_size;
   get_simple_dims(dset, &dset_size);
@@ -437,56 +444,56 @@ read_dataset_1D(hid_t file,
   return dset_size;
 }
 
-/*!
- * \brief Read the coordinates for a set of cells
+/* !
+ * \brief read data from a dataset in a given *open* file
  *
- * \param[in] file_id handle to open HDF5 file
  *
- * \param[in] name name of the dataset to read from
- *
- * \param[out] entities vector to add coordinates to
- *
- * \return number of entities read
  */
 template<typename T>
 size_t
-read_coord_dset(hid_t file_id,
-  const std::string & name,
-  std::vector<T> & entities) {
-  hid_t dset = open_dataset(file_id, name);
+read_dataset_2D(hid_t file_handle,
+  const std::string & dset_name,
+  std::vector<std::vector<T>> & data) {
 
-  // Probably only need the latter of these two checks, but redundancy doesn't
-  // hurt for now
-  assert_dataset_typeclass(dset, H5T_FLOAT);
-  assert_dataset_type(dset, H5T_NATIVE_DOUBLE);
+  hid_t transfer_plist = create_plist(H5P_DATASET_XFER);
 
-  // Expecting one-dimensional data
+  if(H5Pset_type_conv_cb(transfer_plist, handle_conversion_err, nullptr) < 0) {
+    clog_fatal("Failed to register type conversion error callback");
+  }
+
+  hid_t dset = open_dataset(file_handle, dset_name);
+  hid_t dtype = type_equiv<T>::h5_type();
+
+  /* Check that the type we're trying to read shares the same typeclass as
+   * what's actually in the dataset. */
+  H5T_class_t typeclass = H5Tget_class(dtype);
+  assert_dataset_typeclass(dset, typeclass);
+
+  // Expecting two-dimensional data
   clog_assert(
-    get_rank(dset) == 1, "Expected single dimension for coordinate data");
+    get_rank(dset) == 2, "Expected two dimensions for coordinate data");
 
-  hsize_t dims[1];
-  get_simple_dims(dset, dims);
-  size_t num_entities = dims[0];
+  hsize_t dset_sizes[2];
+  get_simple_dims(dset, dset_sizes);
 
-  // Since the rank of these datasets is 1, a simple array is OK.  For
-  // higher-dimensional data, a more dynamic allocation is probably necessary
-  T coords[num_entities];
-  for(size_t i = 0; i < num_entities; i++)
-    coords[i] = 0;
+  size_t dim1_size = dset_sizes[0];
+  size_t dim2_size = dset_sizes[1];
 
-  // Read native doubles, all spaces to all spaces with default props
-  herr_t status =
-    H5Dread(dset, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, coords);
+  T buf[dim1_size][dim2_size];
 
-  for(size_t i = 0; i < num_entities; i++)
-    entities.push_back(coords[i]);
+  herr_t status = H5Dread(dset, dtype, H5S_ALL, H5S_ALL, H5P_DEFAULT, buf);
+  clog_assert(status >= 0, "Failed to read dataset \"" << dset_name << "\"");
 
-  // Done with the dataset, close it.
-  close_dataset(dset);
+  for(size_t i = 0; i < dim1_size; i++) {
+    std::vector<T> vec;
+    for (size_t j = 0; j < dim2_size; j++) {
+      if(buf[i][j] != 0) vec.push_back(buf[i][j] - 1);
+    }
+    data.push_back(vec);
+  }
 
-  return num_entities;
-} // read_coord_set
-
+  return dim1_size * dim2_size;
+}
 } // namespace h5
 
 namespace detail {
@@ -501,59 +508,14 @@ read_coordinates(hid_t file,
 
   // read the coordinate datasets individually, adding the data to the entity
   // vector
-  h5::read_dataset_1D(file, "", entity);
-  size_t xsize = h5::read_coord_dset(file, x_dataset_name, entity);
-  size_t ysize = h5::read_coord_dset(file, y_dataset_name, entity);
+  size_t xsize = h5::read_dataset_1D(file, x_dataset_name, entity);
+  size_t ysize = h5::read_dataset_1D(file, y_dataset_name, entity);
 
   clog_assert(xsize == ysize, "Expected x and y coordinate datasets "
                               "to have the same size");
-
   return xsize;
 } // read_coordinates
 
-// reading connectivity information
-void
-read_connectivity(hid_t file,
-  const std::string & dataset_name,
-  std::vector<std::vector<size_t>> & connectivity) {
-
-  hid_t dset = h5::open_dataset(file, dataset_name);
-
-  h5::assert_dataset_typeclass(dset, H5T_INTEGER);
-  h5::assert_dataset_type(dset, H5T_NATIVE_INT);
-
-  // Expecting two-dimensional data
-  clog_assert(
-    h5::get_rank(dset) == 2, "Expected two dimensions for coordinate data");
-
-  // Get the dimension size of each dimension in the dataspace
-  hsize_t dims[2];
-  h5::get_simple_dims(dset, dims);
-
-  size_t dim1_size = dims[0];
-  size_t dim2_size = dims[1];
-
-  size_t conn[dims[0]][dims[1]];
-
-  for(size_t i = 0; i < dim1_size; i++)
-    for(size_t j = 0; j < dim2_size; j++)
-      conn[i][j] = 0;
-
-  H5Dread(dset, H5T_NATIVE_LONG, H5S_ALL, H5S_ALL, H5P_DEFAULT, conn);
-
-  // Adding connectivity information from the HDF5 array to FleCSI connectivity
-  for(size_t i = 0; i < dim1_size; i++) {
-    std::vector<size_t> tmp;
-    for(size_t j = 0; j < dim2_size; j++) {
-      // there is no connectivity if  conn[i][j]==0
-      if(conn[i][j] != 0)
-        // in HDF5 file entitiy ordering starts from 1 where in flecsi we start
-        // ordering from 0
-        tmp.push_back(conn[i][j] - 1);
-    }
-    connectivity.push_back(tmp);
-  }
-} // read_connectivity
 
 void
 dump_connectivity(std::vector<std::vector<size_t>> & connectivity) {
@@ -658,8 +620,7 @@ public:
   // require it to build the object.
   mpas_definition(const std::string & filename) {
     clog(info) << "Reading mesh from: " << filename << std::endl;
-    file_handle = h5::open_file(filename.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
-    read_entities();
+    read_entities(filename);
   }
 
   /// Default constructor (disabled)
@@ -681,16 +642,20 @@ public:
   // \param[out] m Populate burton mesh \e m with contents
   // of \e name.
   //============================================================================
-  void read_entities() {
+  void read_entities(const std::string & filename) {
 
+    //! \brief handle on the HDF5 file
+    //
+    // This is owned/managed solely by the mpas_definition object
+    hid_t file_handle = h5::open_file(filename.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
     //--------------------------------------------------------------------------
     // read coordinates
 
     { // cells
-      const std::string x_dataset_name("xCell");
-      const std::string y_dataset_name("yCell");
-      num_cells_ = detail::read_coordinates(
-        file_handle, x_dataset_name, y_dataset_name, cells_);
+      const std::string xCell_str("xCell");
+      const std::string yCell_str("yCell");
+      num_cells_ =
+        detail::read_coordinates(file_handle, xCell_str, yCell_str, cells_);
     } // scope
 
     { // vertices
@@ -700,30 +665,28 @@ public:
         file_handle, x_dataset_name, y_dataset_name, vertices_);
     } // scope
 
-    // read connectivity information
-    const std::string edgesOnVertex_NAME("edgesOnVertex");
-    detail::read_connectivity(file_handle, "edgesOnVertex", entities_[0][1]);
+    { // read connectivity information
+      const std::string edgesOnVertex_str{"edgesOnVertex"};
+      const std::string cellsOnVertex_str{"cellsOnVertex"};
+      const std::string verticesOnCell_str{"verticesOnCell"};
+      const std::string edgesOnCell_str{"edgesOnCell"};
+      const std::string cellsOnCell_str{"cellsOnCell"};
+      const std::string verticesOnEdge_str{"verticesOnEdge"};
+      const std::string edgesOnEdge_str{"edgesOnEdge"};
+      const std::string cellsOnEdge_str{"cellsOnEdge"};
 
-    const std::string cellsOnVertex_NAME("cellsOnVertex");
-    detail::read_connectivity(file_handle, cellsOnVertex_NAME, entities_[0][2]);
+      h5::read_dataset_2D(file_handle, edgesOnVertex_str, entities_[0][1]);
+      h5::read_dataset_2D(file_handle, cellsOnVertex_str, entities_[0][2]);
+      h5::read_dataset_2D(file_handle, verticesOnCell_str, entities_[2][0]);
+      h5::read_dataset_2D(file_handle, edgesOnCell_str, entities_[2][1]);
+      h5::read_dataset_2D(file_handle, cellsOnCell_str, entities_[2][2]);
+      h5::read_dataset_2D(file_handle, verticesOnEdge_str, entities_[1][0]);
+      h5::read_dataset_2D(file_handle, edgesOnEdge_str, entities_[1][1]);
+      h5::read_dataset_2D(file_handle, cellsOnEdge_str, entities_[1][2]);
+    } // scope
 
-    const std::string vertOnCell_NAME("verticesOnCell");
-    detail::read_connectivity(file_handle, vertOnCell_NAME, entities_[2][0]);
-
-    const std::string edgesOnCell_NAME("edgesOnCell");
-    detail::read_connectivity(file_handle, edgesOnCell_NAME, entities_[2][1]);
-
-    const std::string cellsOnCell_NAME("cellsOnCell");
-    detail::read_connectivity(file_handle, cellsOnCell_NAME, entities_[2][2]);
-
-    const std::string vertOnEdge_NAME("verticesOnEdge");
-    detail::read_connectivity(file_handle, vertOnEdge_NAME, entities_[1][0]);
-
-    const std::string edgesOnEdge_NAME("edgesOnEdge");
-    detail::read_connectivity(file_handle, edgesOnEdge_NAME, entities_[1][1]);
-
-    const std::string cellsOnEdge_NAME("cellsOnEdge");
-    detail::read_connectivity(file_handle, cellsOnEdge_NAME, entities_[1][2]);
+    // should be done with this?
+    h5::close_file(file_handle);
   }
 
   //============================================================================
@@ -739,7 +702,7 @@ public:
       element_sets = {},
     const std::initializer_list<std::pair<const char *, std::vector<U>>> &
       node_sets = {}) const {
-    clog(info) << "Writing mesh to: " << name << std::endl;
+    clog(info) << "Mesh writing not (yet) enabled for MPAS" << std::endl;
   }
 
   //============================================================================
@@ -797,11 +760,6 @@ private:
   //============================================================================
   // Private data
   //============================================================================
-
-  //! \brief handle on the HDF5 file
-  //
-  // This is owned/managed solely by the mpas_definition object
-  hid_t file_handle;
 
   size_t num_vertices_ = 0;
   size_t num_cells_ = 0;

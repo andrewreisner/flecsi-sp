@@ -18,13 +18,14 @@
 #include <flecsi/execution/execution.h>
 #include <flecsi/topology/closure_utils.h>
 #include <flecsi-sp/burton/burton_mesh.h>
-#include <flecsi-sp/io/exodus_definition.h>
 #include <flecsi-sp/utils/char_array.h>
 #include <flecsi-sp/utils/types.h>
-#include <flecsi-sp/io/mpas_definition.h>
 
-#ifndef FLECSI_SP_ENABLE_EXODUS
-#  error Exodus is needed to build burton specialization.
+
+#ifdef FLECSI_SP_ENABLE_EXODUS
+#include <flecsi-sp/io/exodus_definition.h>
+#else
+#include <flecsi-sp/io/mpas_definition.h>
 #endif
 
 // system includes
@@ -2529,29 +2530,37 @@ void initialize_mesh(
 
 
 // Some aliases for mesh partitioning/initialization functions
+
+#ifdef FLECSI_SP_ENABLE_EXODUS
 using exo_def_t =
     io::exodus_definition<flecsi_sp::burton::burton_mesh_t::num_dimensions,
                             flecsi_sp::burton::burton_mesh_t::real_t>;
+
+auto &partition_exo_mesh = partition_mesh<exo_def_t>;
+auto &initialize_exo_mesh = initialize_mesh<exo_def_t>;
+#else
 using mpas_def_t =
     io::mpas_definition<flecsi_sp::burton::burton_mesh_t::real_t>;
 
 auto &partition_mpas_mesh = partition_mesh<mpas_def_t>;
-auto &partition_exo_mesh = partition_mesh<exo_def_t>;
 auto &initialize_mpas_mesh = initialize_mesh<mpas_def_t>;
-auto &initialize_exo_mesh = initialize_mesh<exo_def_t>;
+#endif
 
 
 ///////////////////////////////////////////////////////////////////////////////
 // Task Registration
 ///////////////////////////////////////////////////////////////////////////////
 
+
+#ifndef FLECSI_SP_ENABLE_EXODUS
 flecsi_register_mpi_task(partition_mpas_mesh, flecsi_sp::burton);
-flecsi_register_mpi_task(partition_exo_mesh, flecsi_sp::burton);
 flecsi_register_task(initialize_mpas_mesh, flecsi_sp::burton, loc,
                      index | flecsi::leaf);
+#else
+flecsi_register_mpi_task(partition_exo_mesh, flecsi_sp::burton);
 flecsi_register_task(initialize_exo_mesh, flecsi_sp::burton, loc,
                      index | flecsi::leaf);
-
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 // Clent Registration happens here because the specialization initialization

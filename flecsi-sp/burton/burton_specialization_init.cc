@@ -70,17 +70,19 @@ void specialization_tlt_init(int argc, char** argv)
   auto extension = ristra::utils::file_extension(mesh_filename_string);
 
   // execute the mpi task to partition the mesh
-  if(extension == "exo" || extension == "g") {
-    flecsi_execute_mpi_task(partition_exo_mesh, flecsi_sp::burton,
-                            mesh_filename, max_entries);
-  }
-  else if(extension == "h5") {
-    flecsi_execute_mpi_task(partition_mpas_mesh, flecsi_sp::burton,
-                            mesh_filename, max_entries);
-  }
-  else {
+#ifdef FLECSI_SP_ENABLE_EXODUS
+  if(extension != "exo" && extension != "g") {
     throw_runtime_error("unrecognized file extension: " << extension);
   }
+  flecsi_execute_mpi_task(partition_exo_mesh, flecsi_sp::burton,
+                            mesh_filename, max_entries);
+#else
+  if(extension != "h5") {
+    throw_runtime_error("unrecognized file extension: " << extension);
+  }
+  flecsi_execute_mpi_task(partition_mpas_mesh, flecsi_sp::burton,
+                            mesh_filename, max_entries);
+#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -114,17 +116,19 @@ void specialization_spmd_init(int argc, char** argv)
   auto extension = ristra::utils::file_extension(mesh_filename_string);
 
   // execute the mpi task to initialize the mesh
-  if(extension == "exo" || extension == "g") {
-    flecsi_execute_task(initialize_exo_mesh, flecsi_sp::burton, index,
-                        mesh_handle, mesh_filename);
-  }
-  else if(extension == "h5") {
-    flecsi_execute_task(initialize_mpas_mesh, flecsi_sp::burton, index,
-                        mesh_handle, mesh_filename);
-  }
-  else {
+#ifdef FLECSI_SP_ENABLE_EXODUS
+  if(extension != "exo" && extension != "g") {
     throw_runtime_error("unrecognized file extension: " << extension);
   }
+  flecsi_execute_task(initialize_exo_mesh, flecsi_sp::burton, index,
+                        mesh_handle, mesh_filename);
+#else
+  if(extension != "h5") {
+    throw_runtime_error("unrecognized file extension: " << extension);
+  }
+  flecsi_execute_task(initialize_mpas_mesh, flecsi_sp::burton, index,
+                        mesh_handle, mesh_filename);
+#endif
 }
 
 } // namespace

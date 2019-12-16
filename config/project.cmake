@@ -191,7 +191,7 @@ endif()
 
 # C++ interface can be added with COMPONENTS CXX, but the HDF Group makes no
 # guarantees about the behavior of parallel operations using the C++ wrappers.
-find_package(HDF5 QUIET)
+find_package(HDF5 COMPONENTS C HL QUIET)
 
 option(FLECSI_SP_ENABLE_MPAS "Enable HDF5 I/O for MPAS meshes." ${HDF5_FOUND})
 
@@ -201,7 +201,7 @@ endif()
 
 if(FLECSI_SP_ENABLE_MPAS)
   include_directories(${HDF5_INCLUDE_DIRS})
-  list(APPEND FLECSI_SP_LIBRARIES ${HDF5_LIBRARIES})
+  list(APPEND FLECSI_SP_LIBRARIES ${HDF5_LIBRARIES} ${HDF5_C_HL_LIBRARIES})
 endif()
 
 #------------------------------------------------------------------------------#

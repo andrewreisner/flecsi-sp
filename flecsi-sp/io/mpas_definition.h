@@ -16,6 +16,7 @@
 // thirdparty includes
 extern "C" {
 #include <hdf5.h>
+#include <hdf5_hl.h>
 }
 
 // system includes
@@ -175,6 +176,15 @@ handle_conversion_err(H5T_conv_except_t except_type,
   return H5T_CONV_ABORT;
 }
 
+
+hid_t create_file(const std::string name, unsigned flags, hid_t fapl_id)
+{
+  hid_t file = H5Fcreate(name.c_str(), flags, fapl_id, H5P_DEFAULT);
+  if (file < 0) {
+    clog_fatal("could not open file: " << name);
+  }
+  return file;
+}
 /*!
  * \brief Open an HDF5 file with the given flags and access properties
  *
@@ -194,7 +204,7 @@ hid_t
 open_file(const std::string & name, unsigned flags, hid_t fapl_id) {
   // Note: Third param (fapl_id) is the id for file access props For parallel
   // access, the fapl_id will hold the communicator
-  hid_t file = H5Fopen(name.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
+  hid_t file = H5Fopen(name.c_str(), flags, H5P_DEFAULT);
 
   if(file < 0) {
     // Try to give some meaningful feedback if open fails
@@ -246,6 +256,34 @@ open_dataset(hid_t loc, const std::string & name) {
   clog_assert(handle >= 0, "Failed to open dataset: " << name);
   return handle;
 } // open_dataset
+
+
+/*!
+ * \brief Create the specified dataset, failing hard if the open is unsuccessful
+ *
+ * \tparam T C++ type of dataset
+ * \tparam ND number of dimensions
+ * \param[in] loc the handle to an open location identifier
+ * \param[in] dims dimensions of the dataset
+ * \param[in] name name of the dataset to create
+ * \return a handle to the dataset
+ */
+template<class T, unsigned short ND>
+hid_t create_dataset(hid_t loc, std::array<hsize_t, ND> dims, const std::string & name) {
+  clog_assert((ND == 1) or (ND == 2), "Not implemented: create_dataset for dimension = " << ND);
+  auto dataspace_id = H5Screate_simple(ND, dims.data(), NULL);
+  auto dtype = type_equiv<T>::h5_type();
+  hid_t dataset_id;
+  if (ND == 1) {
+    dataset_id = H5Dcreate1(loc, name.c_str(), dtype, dataspace_id, H5P_DEFAULT);
+  } else {
+    dataset_id = H5Dcreate2(loc, name.c_str(), dtype, dataspace_id,
+                            H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+  }
+  clog_assert(dataset_id >= 0, "Failed to create dataset: " << name);
+
+  return dataset_id;
+} // create_dataset
 
 /*!
  * \brief wrapper for H5Dclose
@@ -487,6 +525,58 @@ read_dataset_2D(hid_t file_handle,
   for(size_t i = 0; i < dim1_size; i++) {
     std::vector<T> vec;
     for (size_t j = 0; j < dim2_size; j++) {
+      vec.push_back(buf[i][j]);
+    }
+    data.push_back(vec);
+  }
+
+  return dim1_size * dim2_size;
+}
+
+
+/* !
+ * \brief 2D connectivity data from a dataset in a given *open* file
+ *
+ *
+ */
+template<typename T>
+size_t
+read_connectivity_2D(hid_t file_handle,
+  const std::string & dset_name,
+  std::vector<std::vector<T>> & data) {
+
+  hid_t transfer_plist = create_plist(H5P_DATASET_XFER);
+
+  if(H5Pset_type_conv_cb(transfer_plist, handle_conversion_err, nullptr) < 0) {
+    clog_fatal("Failed to register type conversion error callback");
+  }
+
+  hid_t dset = open_dataset(file_handle, dset_name);
+  hid_t dtype = type_equiv<T>::h5_type();
+
+  /* Check that the type we're trying to read shares the same typeclass as
+   * what's actually in the dataset. */
+  H5T_class_t typeclass = H5Tget_class(dtype);
+  assert_dataset_typeclass(dset, typeclass);
+
+  // Expecting two-dimensional data
+  clog_assert(
+    get_rank(dset) == 2, "Expected two dimensions for coordinate data");
+
+  hsize_t dset_sizes[2];
+  get_simple_dims(dset, dset_sizes);
+
+  size_t dim1_size = dset_sizes[0];
+  size_t dim2_size = dset_sizes[1];
+
+  T buf[dim1_size][dim2_size];
+
+  herr_t status = H5Dread(dset, dtype, H5S_ALL, H5S_ALL, H5P_DEFAULT, buf);
+  clog_assert(status >= 0, "Failed to read dataset \"" << dset_name << "\"");
+
+  for(size_t i = 0; i < dim1_size; i++) {
+    std::vector<T> vec;
+    for (size_t j = 0; j < dim2_size; j++) {
       if(buf[i][j] != 0) vec.push_back(buf[i][j] - 1);
     }
     data.push_back(vec);
@@ -494,6 +584,82 @@ read_dataset_2D(hid_t file_handle,
 
   return dim1_size * dim2_size;
 }
+
+
+/**
+ * \brief Write 1D dataset to a given *open* file
+ *
+ * \param[in] file_handle file to write dataset
+ * \param[in] dset_name name of dataset to write
+ * \param[in] data 1D data vector to write to dataset
+ */
+template<class T>
+void write_dataset_1D(hid_t file_handle,
+                      const std::string & dset_name,
+                      std::vector<T> & data)
+{
+  hid_t dset = create_dataset<T, 1>(file_handle, {data.size()}, dset_name);
+  hid_t dtype = type_equiv<T>::h5_type();
+  herr_t status = H5Dwrite(dset, dtype, H5S_ALL, H5S_ALL, H5P_DEFAULT, data.data());
+  clog_assert(status >= 0, "Failed to write dataset \"" << dset_name << "\"");
+  status = H5Dclose(dset);
+  clog_assert(status >= 0, "Failed to close dataset \"" << dset_name << "\"");
+}
+
+
+/**
+ * \brief Write 2D dataset to a given *open* file
+ *
+ * \param[in] file_handle file to write dataset
+ * \param[in] dset_name name of dataset to write
+ * \param[in] data 2D data vector to write to dataset
+ */
+template<class T>
+void write_dataset_2D(hid_t file_handle,
+                      const std::string & dset_name,
+                      std::vector<std::vector<T>> & data)
+{
+  auto dim1 = data.size();
+  auto dim2 = data[0].size();
+  hid_t dset = create_dataset<T, 2>(file_handle, {dim1, dim2}, dset_name);
+  hid_t dtype = type_equiv<T>::h5_type();
+  T buf[dim1][dim2];
+  for (std::size_t i = 0; i < dim1; i++) {
+    for (std::size_t j = 0; j < dim2; j++) {
+      buf[i][j] = data[i][j];
+    }
+  }
+  herr_t status = H5Dwrite(dset, dtype, H5S_ALL, H5S_ALL, H5P_DEFAULT, buf);
+  clog_assert(status >= 0, "Failed to write dataset \"" << dset_name << "\"");
+  status = H5Dclose(dset);
+  clog_assert(status >= 0, "Failed to close dataset \"" << dset_name << "\"");
+}
+
+
+/**
+ * \brief attach dimension scale to a dataset
+ *
+ * This attaches an existing dimension scale identified by dscale_name to
+ * a specified dimension for a given dataset.
+ * \param[in] file_handle file to use
+ * \param[in] dset_name name of dataset to attach dimension scale to
+ * \param[in] dscale_name name of dimension scale to attach to dataset
+ * \param[in] dim dimension index indicating which dimension to attach the scale
+ */
+void attach_scale(hid_t file_handle,
+                  const std::string & dset_name,
+                  const std::string & dscale_name,
+                  unsigned int dim)
+{
+  hid_t dset = open_dataset(file_handle, dset_name);
+  hid_t ds_dset = open_dataset(file_handle, dscale_name);
+  H5DSattach_scale(dset, ds_dset, dim);
+
+
+  close_dataset(dset);
+  close_dataset(ds_dset);
+}
+
 } // namespace h5
 
 namespace detail {
@@ -675,14 +841,14 @@ public:
       const std::string edgesOnEdge_str{"edgesOnEdge"};
       const std::string cellsOnEdge_str{"cellsOnEdge"};
 
-      h5::read_dataset_2D(file_handle, edgesOnVertex_str, entities_[0][1]);
-      h5::read_dataset_2D(file_handle, cellsOnVertex_str, entities_[0][2]);
-      h5::read_dataset_2D(file_handle, verticesOnCell_str, entities_[2][0]);
-      h5::read_dataset_2D(file_handle, edgesOnCell_str, entities_[2][1]);
-      h5::read_dataset_2D(file_handle, cellsOnCell_str, entities_[2][2]);
-      h5::read_dataset_2D(file_handle, verticesOnEdge_str, entities_[1][0]);
-      h5::read_dataset_2D(file_handle, edgesOnEdge_str, entities_[1][1]);
-      h5::read_dataset_2D(file_handle, cellsOnEdge_str, entities_[1][2]);
+      h5::read_connectivity_2D(file_handle, edgesOnVertex_str, entities_[0][1]);
+      h5::read_connectivity_2D(file_handle, cellsOnVertex_str, entities_[0][2]);
+      h5::read_connectivity_2D(file_handle, verticesOnCell_str, entities_[2][0]);
+      h5::read_connectivity_2D(file_handle, edgesOnCell_str, entities_[2][1]);
+      h5::read_connectivity_2D(file_handle, cellsOnCell_str, entities_[2][2]);
+      h5::read_connectivity_2D(file_handle, verticesOnEdge_str, entities_[1][0]);
+      h5::read_connectivity_2D(file_handle, edgesOnEdge_str, entities_[1][1]);
+      h5::read_connectivity_2D(file_handle, cellsOnEdge_str, entities_[1][2]);
     } // scope
 
     // should be done with this?

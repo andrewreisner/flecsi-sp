@@ -30,6 +30,7 @@ set(burton_SOURCES
 # install common files
 install(FILES burton_specialization_init.cc DESTINATION ${FLECSI_SP_SHARE_DIR})
 
+if (NOT FLECSI_SP_ENABLE_MPAS)
 cinch_add_unit(flecsi_sp_burton_1d
   ARGUMENTS
   -m ${FLECSI_SP_DATA_DIR}/meshes/1d/uniform/uniform_32.exo
@@ -80,6 +81,7 @@ cinch_add_unit(flecsi_sp_burton_extras_1d
   THREADS 2
   LIBRARIES FleCSI-SP
 )
+endif()
 
 
 cinch_add_unit(flecsi_sp_burton_2d
@@ -133,7 +135,7 @@ cinch_add_unit(flecsi_sp_burton_extras_2d
   LIBRARIES FleCSI-SP
 )
 
-
+if (NOT FLECSI_SP_ENABLE_MPAS)
 cinch_add_unit(flecsi_sp_burton_3d
   ARGUMENTS
   -m ${FLECSI_SP_DATA_DIR}/meshes/3d/box/box-hex.g
@@ -184,6 +186,7 @@ cinch_add_unit(flecsi_sp_burton_extras_3d
   THREADS 2
   LIBRARIES FleCSI-SP
 )
+endif()
 
 cinch_add_unit(flecsi_sp_larsen_thin_2d
   ARGUMENTS

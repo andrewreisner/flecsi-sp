@@ -50,7 +50,7 @@ void specialization_tlt_init(int argc, char** argv)
                 << std::endl;
   }
   else {
-    throw_runtime_error( "No mesh file provided" );
+    THROW_RUNTIME_ERROR( "No mesh file provided" );
   }
   
   // get the maximum number of entries
@@ -72,13 +72,13 @@ void specialization_tlt_init(int argc, char** argv)
   // execute the mpi task to partition the mesh
 #ifdef FLECSI_SP_ENABLE_EXODUS
   if(extension != "exo" && extension != "g") {
-    throw_runtime_error("unrecognized file extension: " << extension);
+    THROW_RUNTIME_ERROR("unrecognized file extension: " << extension);
   }
   flecsi_execute_mpi_task(partition_exo_mesh, flecsi_sp::burton,
                             mesh_filename, max_entries);
 #else
   if(extension != "h5") {
-    throw_runtime_error("unrecognized file extension: " << extension);
+    THROW_RUNTIME_ERROR("unrecognized file extension: " << extension);
   }
   flecsi_execute_mpi_task(partition_mpas_mesh, flecsi_sp::burton,
                             mesh_filename, max_entries);
@@ -118,13 +118,13 @@ void specialization_spmd_init(int argc, char** argv)
   // execute the mpi task to initialize the mesh
 #ifdef FLECSI_SP_ENABLE_EXODUS
   if(extension != "exo" && extension != "g") {
-    throw_runtime_error("unrecognized file extension: " << extension);
+    THROW_RUNTIME_ERROR("unrecognized file extension: " << extension);
   }
   flecsi_execute_task(initialize_exo_mesh, flecsi_sp::burton, index,
                         mesh_handle, mesh_filename);
 #else
   if(extension != "h5") {
-    throw_runtime_error("unrecognized file extension: " << extension);
+    THROW_RUNTIME_ERROR("unrecognized file extension: " << extension);
   }
   flecsi_execute_task(initialize_mpas_mesh, flecsi_sp::burton, index,
                         mesh_handle, mesh_filename);

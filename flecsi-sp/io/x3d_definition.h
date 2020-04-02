@@ -665,7 +665,7 @@ class x3d_definition<2, T> : public flecsi::topology::mesh_definition_u<2> {
   //! definition is being requested.
   //! \param [in] to_dim The dimension of the entities of the definition.
   const std::vector<std::vector<size_t>> &
-  entities(size_t from_dim, size_t to_dim) const {
+  entities(size_t from_dim, size_t to_dim) const override {
     return entities_.at(from_dim).at(to_dim);
   }  // entities
 
@@ -926,7 +926,7 @@ class x3d_definition<3, T> : public flecsi::topology::mesh_definition_u<3> {
   //! definition is being requested.
   //! \param [in] to_dim The dimension of the entities of the definition.
   const std::vector<std::vector<size_t>> &
-  entities(size_t from_dim, size_t to_dim) const {
+  entities(size_t from_dim, size_t to_dim) const override {
     return entities_.at(from_dim).at(to_dim);
   }  // entities
 
